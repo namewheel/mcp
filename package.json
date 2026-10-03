@@ -1,0 +1,60 @@
+{
+  "name": "@namewheel/mcp",
+  "version": "1.0.0",
+  "mcpName": "org.namewheel/mcp",
+  "description": "NameWheel MCP server: a fair random name picker for Claude, ChatGPT, Cursor, VS Code and any MCP client. Spin a wheel in the chat, split teams, and run certified draws with a public proof link.",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-apps",
+    "random-picker",
+    "name-picker",
+    "spin-the-wheel",
+    "random-team-generator",
+    "verifiable-random",
+    "claude",
+    "chatgpt",
+    "namewheel"
+  ],
+  "homepage": "https://namewheel.org/mcp",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/namewheel/mcp.git"
+  },
+  "bugs": {
+    "url": "https://github.com/namewheel/mcp/issues"
+  },
+  "author": "NameWheel (https://namewheel.org)",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "namewheel-mcp": "dist/stdio.js"
+  },
+  "files": [
+    "dist",
+    "widget",
+    "assets",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p .",
+    "start": "node dist/index.js",
+    "start:local": "node dist/stdio.js",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.31.0",
+    "express": "^5.2.1",
+    "jose": "^6.2.12",
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.6.0"
+  }
+}

@@ -1,0 +1,157 @@
+// NameWheel MCP server. One process, Streamable HTTP, stateless: every request
+// builds a server bound to the caller (anonymous, or a NameWheel API key from
+// a header or from an access token we issued) and answers it.
+import express, { type Request, type Response, type NextFunction } from "express";
+import { fileURLToPath } from "node:url";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { appendFileSync, mkdirSync, readdirSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
+import { CONFIG, MCP_PATH, RESOURCE } from "./config.js";
+import { loadStore } from "./store.js";
+import { mountOAuth, keyFromAccessToken, wwwAuthenticate, checkKey } from "./oauth.js";
+import { PROTECTED_TOOLS, platformSpent, type Caller } from "./tools.js";
+import { widgetHtml } from "./widget.js";
+import { createServer } from "./server.js";
+import { overLimit, platformOf, startPlatformList } from "./limits.js";
+import pkg from "../package.json" with { type: "json" };
+
+const SITE = CONFIG.siteUrl;
+loadStore();
+startPlatformList();
+mkdirSync(join(CONFIG.stateDir, "log"), { recursive: true });
+// Request logs are kept 30 days (the privacy notice says so): older daily files are deleted.
+// They hold the tool, the number of entries and the caller's address, never the names themselves.
+const pruneLogs = () => { const cut = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10); try { for (const f of readdirSync(join(CONFIG.stateDir, "log"))) if (/^\d{4}-\d{2}-\d{2}\.jsonl$/.test(f) && f.slice(0, 10) < cut) unlinkSync(join(CONFIG.stateDir, "log", f)); } catch { /* never fail on cleanup */ } };
+pruneLogs(); setInterval(pruneLogs, 6 * 3_600_000).unref();
+const logLine = (o: Record<string, unknown>) => { try { appendFileSync(join(CONFIG.stateDir, "log", `${new Date().toISOString().slice(0, 10)}.jsonl`), JSON.stringify({ t: new Date().toISOString(), ...o }) + "\n"); } catch { /* never fail a call for a log */ } };
+
+const app = express();
+app.set("trust proxy", true);
+app.disable("x-powered-by");
+app.use(express.json({ limit: "1mb" }));
+app.use(express.urlencoded({ extended: false }));
+app.use((_q, res, next) => { res.setHeader("Access-Control-Allow-Origin", "*"); res.setHeader("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept, Mcp-Session-Id, Mcp-Protocol-Version, x-api-key"); res.setHeader("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS"); res.setHeader("Access-Control-Expose-Headers", "Mcp-Session-Id, WWW-Authenticate"); next(); });
+app.options("/{*path}", (_q, res) => res.sendStatus(204));
+
+mountOAuth(app);
+
+// The logo, for clients that show one next to the server (same host as the server, as the spec asks).
+const ASSETS = fileURLToPath(new URL("../assets/", import.meta.url));
+app.get("/icon-:size.png", (req: Request, res: Response) => { if (!["128", "256", "512"].includes(String(req.params.size))) return res.status(404).end(); res.setHeader("Cache-Control", "public, max-age=86400"); res.sendFile(`icon-${req.params.size}.png`, { root: ASSETS }, (err) => { if (err && !res.headersSent) res.status(404).end(); }); });
+
+// The in-chat wheel, also shown live on namewheel.org/mcp (the page plays the host).
+app.get("/widget/wheel.html", (_q, res) => {
+  res.setHeader("Content-Security-Policy", "frame-ancestors 'self' https://namewheel.org https://www.namewheel.org");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Cache-Control", "public, max-age=300");
+  res.type("html").send(widgetHtml());
+});
+
+app.get("/privacy", (_q, res) => res.redirect(302, `${SITE}/privacy#mcp`));
+app.get("/robots.txt", (_q, res) => res.type("text/plain").send(["User-agent: *", "Disallow: /", ""].join(String.fromCharCode(10))));
+app.get(["/health", "/mcp/health"], (_q, res) => res.json({ ok: true, name: pkg.name, version: pkg.version, mcp: RESOURCE }));
+
+const clientIp = (req: Request) => (req.headers["cf-connecting-ip"] as string || "").trim() || (req.headers["x-real-ip"] as string || "").trim() || (req.ip || "0.0.0.0").replace(/^::ffff:/, "");
+
+const keyPlans = new Map<string, { plan: string; at: number }>();
+async function planForKey(key: string): Promise<string | null> {
+  const c = keyPlans.get(key);
+  if (c && Date.now() - c.at < 300_000) return c.plan;
+  const k = await checkKey(key);
+  if ("plan" in k) { keyPlans.set(key, { plan: k.plan, at: Date.now() }); return k.plan; }
+  return null;
+}
+setInterval(() => { const cut = Date.now() - 300_000; for (const [k, v] of keyPlans) if (v.at < cut) keyPlans.delete(k); }, 600_000).unref();
+
+/** Who is calling: an API key (header or bearer), a token we issued, or nobody. */
+async function resolveCaller(req: Request): Promise<{ caller: Caller; badToken: boolean }> {
+  const ip = clientIp(req);
+  const platform = platformOf(ip);
+  const ua = String(req.headers["user-agent"] || "").slice(0, 120);
+  const auth = String(req.headers.authorization || "");
+  let key = String(req.headers["x-api-key"] || "").trim();
+  let badToken = false;
+  if (!key && auth.startsWith("Bearer ")) {
+    const tok = auth.slice(7).trim();
+    if (/^nw_live_/.test(tok)) key = tok;
+    else if (tok) {
+      const k = await keyFromAccessToken(tok);
+      if (k) return { caller: { kind: "key", apiKey: k.apiKey, plan: k.plan, ip, userAgent: ua, platform }, badToken: false };
+      badToken = true;
+    }
+  }
+  if (key) {
+    // Guessing keys: a handful of wrong ones per address, then nothing is checked for a while.
+    if (!keyPlans.has(key) && overLimit("keycheck", ip, platform ? 3000 : 30, 600_000)) return { caller: { kind: "anon", ip, userAgent: ua, platform }, badToken: true };
+    const plan = await planForKey(key);
+    if (plan) return { caller: { kind: "key", apiKey: key, plan, ip, userAgent: ua, platform }, badToken: false };
+    badToken = true;
+  }
+  return { caller: { kind: "anon", ip, userAgent: ua, platform }, badToken };
+}
+
+type Msg = { method?: string; params?: { name?: string; arguments?: Record<string, unknown> } };
+const messages = (body: unknown): Msg[] => (Array.isArray(body) ? body : [body]) as Msg[];
+const GUEST_TOOLS = new Set(["spin_wheel", "make_teams", "open_wheel_link", "verify_draw"]);
+const callsTool = (body: unknown, set: Set<string>): string | null => {
+  for (const m of messages(body)) if (m?.method === "tools/call" && m.params?.name && set.has(m.params.name)) return m.params.name;
+  return null;
+};
+
+async function handleMcp(req: Request, res: Response): Promise<void> {
+  // This server always answers in plain JSON, so a client that only accepts JSON (or says nothing),
+  // like OpenAI's plugin checker, is served instead of refused with 406.
+  if (req.method === "POST") {
+    const acc = String(req.headers.accept || "");
+    if (!/text\/event-stream/.test(acc) || !/application\/json|\*\/\*/.test(acc)) req.headers.accept = "application/json, text/event-stream";
+  }
+  if (overLimit("mcp", clientIp(req), platformOf(clientIp(req)) ? 6000 : 180, 60_000)) { res.status(429).set("Retry-After", "60").json({ jsonrpc: "2.0", error: { code: -32000, message: "Too many requests from this address. Wait a minute." }, id: null }); return; }
+  const { caller, badToken } = await resolveCaller(req);
+  let protectedTool = req.method === "POST" ? callsTool(req.body, PROTECTED_TOOLS) : null;
+  // On claude.ai and ChatGPT every guest shares the platform's allowance; once it is spent,
+  // the next spin asks the person to connect their own (free) account instead.
+  if (!protectedTool && req.method === "POST" && platformSpent(caller)) protectedTool = callsTool(req.body, GUEST_TOOLS);
+  // Sign-in only for the tools that need an account: a transport-level 401
+  // makes Claude and other clients show their Connect flow, then retry.
+  if ((protectedTool && caller.kind !== "key") || (badToken && req.method === "POST")) {
+    const why = protectedTool ? `Connect a free NameWheel account to use ${protectedTool}` : "The token was not accepted; connect again";
+    res.status(401).set("WWW-Authenticate", wwwAuthenticate(why)).json({ error: "invalid_token", error_description: why });
+    logLine({ ev: "auth_required", tool: protectedTool, ip: caller.ip, ua: caller.userAgent });
+    return;
+  }
+  const server = createServer(caller);
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+  const t0 = Date.now();
+  res.on("finish", () => {
+    if (req.method !== "POST") return;
+    for (const msg of messages(req.body)) {
+      const a = msg?.params?.arguments || {};
+      if (msg?.method === "tools/call") logLine({ ev: "call", tool: msg.params?.name, kind: caller.kind, plan: caller.plan || null, platform: caller.platform || undefined, entries: Array.isArray(a.entries) ? a.entries.length : undefined, status: res.statusCode, ms: Date.now() - t0, ip: caller.ip, ua: caller.userAgent });
+      else if (msg?.method === "initialize") logLine({ ev: "initialize", client: (msg.params as { clientInfo?: { name?: string; version?: string } })?.clientInfo || null, kind: caller.kind, platform: caller.platform || undefined, ip: caller.ip, ua: caller.userAgent });
+    }
+  });
+  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
+  res.on("close", () => { transport.close().catch(() => {}); server.close().catch(() => {}); });
+}
+
+// A person opening the address in a browser gets the documentation.
+app.get("/", (_q, res) => res.redirect(302, `${SITE}/mcp`));
+app.all(MCP_PATH, (req, res) => {
+  if (req.method === "GET") {
+    // People get the documentation; clients asking for a standalone notification stream get 405, since this server is stateless and never pushes.
+    if (req.accepts(["text/event-stream", "text/html"]) === "text/html") return res.redirect(302, `${SITE}/mcp`);
+    res.setHeader("Allow", "POST, OPTIONS"); return res.status(405).json({ jsonrpc: "2.0", error: { code: -32000, message: "Method not allowed. This server is stateless: send JSON-RPC by POST." }, id: null });
+  }
+  if (req.method === "DELETE") { res.setHeader("Allow", "POST, OPTIONS"); return res.status(405).end(); }
+  handleMcp(req, res).catch((e) => { console.error("mcp", e); if (!res.headersSent) res.status(500).json({ jsonrpc: "2.0", error: { code: -32603, message: "Internal error" }, id: null }); });
+});
+
+app.use((err: Error & { type?: string; status?: number }, _q: Request, res: Response, _n: NextFunction) => {
+  // A body that is not JSON is the caller's mistake: JSON-RPC's parse error, not a server error.
+  if (err.type === "entity.parse.failed") return void res.status(400).json({ jsonrpc: "2.0", error: { code: -32700, message: "Parse error: the body is not valid JSON." }, id: null });
+  if (err.type === "entity.too.large") return void res.status(413).json({ jsonrpc: "2.0", error: { code: -32600, message: "Request too large." }, id: null });
+  console.error(err); if (!res.headersSent) res.status(500).json({ error: "server_error" });
+});
+
+app.listen(CONFIG.port, CONFIG.host, () => console.log(`namewheel mcp ${pkg.version} on ${CONFIG.host}:${CONFIG.port} -> ${RESOURCE}`));

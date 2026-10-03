@@ -1,0 +1,63 @@
+// One JSON file for what has to survive a restart: OAuth clients, issued
+// codes and refresh tokens, and the guest meters. Small by design; the
+// server is one process.
+import { mkdirSync, readFileSync, writeFileSync, renameSync, existsSync } from "node:fs";
+import { join } from "node:path";
+import { CONFIG } from "./config.js";
+
+export interface OAuthClient { client_id: string; client_name?: string; redirect_uris: string[]; created: number }
+export interface AuthCode { code: string; client_id: string; redirect_uri: string; code_challenge: string; api_key: string; plan: string; exp: number }
+export interface RefreshToken { token: string; client_id: string; api_key: string; plan: string; exp: number; created: number }
+/** Guest calls on one meter: times of the calls in the last day. */
+export interface AnonMeter { calls: number[] }
+
+interface State {
+  clients: Record<string, OAuthClient>;
+  codes: Record<string, AuthCode>;
+  refresh: Record<string, RefreshToken>;
+  anon: Record<string, AnonMeter>;
+}
+
+const FILE = join(CONFIG.stateDir, "state.json");
+let state: State = { clients: {}, codes: {}, refresh: {}, anon: {} };
+let dirty = false;
+
+export function loadStore(): void {
+  mkdirSync(CONFIG.stateDir, { recursive: true });
+  if (existsSync(FILE)) {
+    try { state = { ...state, ...JSON.parse(readFileSync(FILE, "utf8")) }; } catch { /* start clean */ }
+  }
+  setInterval(flush, 5000).unref();
+  setInterval(prune, 60_000).unref();
+}
+
+export const store = {
+  get: () => state,
+  touch: () => { dirty = true; },
+};
+
+function flush(): void {
+  if (!dirty) return;
+  dirty = false;
+  const tmp = FILE + ".tmp";
+  writeFileSync(tmp, JSON.stringify(state));
+  renameSync(tmp, FILE);
+}
+
+function prune(): void {
+  const now = Date.now();
+  for (const [k, c] of Object.entries(state.codes)) if (c.exp < now) { delete state.codes[k]; dirty = true; }
+  for (const [k, r] of Object.entries(state.refresh)) if (r.exp < now) { delete state.refresh[k]; dirty = true; }
+  const dayAgo = now - 86_400_000;
+  for (const [k, m] of Object.entries(state.anon)) {
+    m.calls = m.calls.filter((t) => t > dayAgo);
+    if (!m.calls.length) delete state.anon[k];
+    dirty = true;
+  }
+  // Registered clients with no live code or token: gone after 30 days, and never more than 5,000 of them.
+  const used = new Set([...Object.values(state.codes).map((c) => c.client_id), ...Object.values(state.refresh).map((r) => r.client_id)]);
+  const idle = Object.values(state.clients).filter((c) => !used.has(c.client_id)).sort((a, b) => a.created - b.created);
+  for (const c of idle) if (c.created < now - 30 * 86_400_000) { delete state.clients[c.client_id]; dirty = true; }
+  const over = Object.keys(state.clients).length - 5000;
+  if (over > 0) for (const c of idle.slice(0, over)) { delete state.clients[c.client_id]; dirty = true; }
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "org.namewheel/mcp",
+  "title": "NameWheel",
+  "description": "Fair random picks with the wheel in your chat: pick names, split teams, and run certified draws with public proof pages.",
+  "icons": [
+    {
+      "src": "https://mcp.namewheel.org/icon-512.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "512x512"
+      ]
+    },
+    {
+      "src": "https://mcp.namewheel.org/icon-128.png",
+      "mimeType": "image/png",
+      "sizes": [
+        "128x128"
+      ]
+    }
+  ],
+  "repository": {
+    "url": "https://github.com/namewheel/mcp",
+    "source": "github"
+  },
+  "version": "1.0.0",
+  "websiteUrl": "https://namewheel.org/mcp",
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.namewheel.org/mcp"
+    }
+  ]
+}
