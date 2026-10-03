@@ -1,41 +1,83 @@
 # NameWheel MCP server
 
-Fair random picks inside Claude, ChatGPT, Cursor, VS Code, Codex, Windsurf, Gemini CLI and any other MCP client. One remote server, nothing to install:
+An open source (MIT) MCP server for fair random picks: pick names from a list, split people into random teams, make wheel links, and check certified draws. It runs on your own machine over stdio (Node.js 20+ or Docker), and the same code also runs as a hosted Streamable HTTP server at `https://mcp.namewheel.org/mcp`.
+
+In clients that show MCP Apps (Claude, ChatGPT and others), the NameWheel wheel spins to the result right in the chat. When other people need to check a result later, it runs a **certified draw** with a permanent public proof page.
+
+## Run it locally (stdio)
 
 ```
-https://mcp.namewheel.org/mcp
+git clone https://github.com/namewheel/mcp && cd mcp
+npm install && npm run build
+node dist/stdio.js
 ```
 
-Ask your assistant to pick a student, split a class into teams or choose where to eat. In clients that show MCP Apps (Claude, ChatGPT and others), the NameWheel wheel spins to the result right in the chat. When other people need to be able to check the result, it runs a **certified draw** with a permanent public proof page.
+Or with Docker:
 
-## What it does
+```
+docker build -t namewheel-mcp .
+docker run -i --rm namewheel-mcp
+```
 
-| Tool | What it does | Needs |
+What runs on your machine:
+
+- **Picking winners** (`spin_wheel`): Node's cryptographic random number generator (`crypto.randomInt`) in this process. No network needed.
+- **Teams** (`make_teams`) and **wheel links** (`open_wheel_link`): computed locally. No network needed.
+- **Checking a certified draw** (`verify_draw`): downloads the draw's public record and NameWheel's public key, then recomputes everything locally: the SHA-256 commitment, the HMAC-SHA256 winner and the Ed25519 signature.
+- **Limits** (`check_plan`): answered locally.
+
+Only `certified_draw`, `freeze_list` and `my_draws` call the NameWheel API, because a certified draw is published on a public proof page at namewheel.org. They use your own free API key:
+
+```
+NAMEWHEEL_API_KEY=nw_live_... node dist/stdio.js
+docker run -i --rm -e NAMEWHEEL_API_KEY=nw_live_... namewheel-mcp
+```
+
+Make a key in one press at [namewheel.org/mcp](https://namewheel.org/mcp#key). Without a key the server still starts and everything above works.
+
+Claude Desktop, Cursor, Cline, Windsurf and other clients that start local servers:
+
+```json
+{
+  "mcpServers": {
+    "namewheel": {
+      "command": "node",
+      "args": ["/absolute/path/to/mcp/dist/stdio.js"],
+      "env": { "NAMEWHEEL_API_KEY": "nw_live_..." }
+    }
+  }
+}
+```
+
+The `env` block is optional.
+
+## Tools
+
+| Tool | What it does | Where it runs |
 |---|---|---|
-| `spin_wheel` | Pick one or more winners at random from a list, with the wheel shown in the chat. | Nothing |
-| `make_teams` | Split names into random teams or groups of even size. | Nothing |
-| `open_wheel_link` | A namewheel.org link that opens the full wheel with the names loaded. | Nothing |
-| `verify_draw` | Check a certified draw from its code or link: recomputes the winner, checks the commitment and the Ed25519 signature. | Nothing |
-| `check_plan` | What this connection can do, and certified draws left today. | Nothing |
-| `certified_draw` | A TrueSpin certified draw: the winner is sealed before the spin and published on a public proof page (namewheel.org/v/CODE). | Free NameWheel account |
-| `freeze_list` | Lock an entry list in public before the draw (namewheel.org/f/CODE). | Free NameWheel account |
-| `my_draws` | The account's certified draws and frozen lists with proof links. | Free NameWheel account |
+| `spin_wheel` | Pick one or more winners at random from a list, with the wheel shown in the chat. | Locally |
+| `make_teams` | Split names into random teams or groups of even size. | Locally |
+| `open_wheel_link` | A namewheel.org link that opens the full wheel with the names loaded. | Locally |
+| `verify_draw` | Check a certified draw from its code or link: recomputes the winner, checks the commitment and the Ed25519 signature. | Locally, after fetching the public record |
+| `check_plan` | What this connection can do, and certified draws left today. | Locally (with a key: reads your plan) |
+| `certified_draw` | A TrueSpin certified draw: the winner is sealed before the spin and published on a public proof page (namewheel.org/v/CODE). | NameWheel API, your key |
+| `freeze_list` | Lock an entry list in public before the draw (namewheel.org/f/CODE). | NameWheel API, your key |
+| `my_draws` | Your certified draws and frozen lists with proof links. | NameWheel API, your key |
 
 Certified draws publish the title, every entry and the winner on the proof page. The tool description says so, so assistants tell people before running one.
 
-**Without an account:** every tool except the three above, 30 calls a minute and 500 a day per connection. Guests on claude.ai and ChatGPT share an allowance per platform.
+The server also has 5 prompts (`pick_student`, `split_teams`, `certified_draw_with_proof`, `make_a_decision`, `verify_a_draw`) and 2 resources (`namewheel://truespin`, how certified draws work, and `namewheel://limits`).
 
-**With a free account:** certified draws (up to 20 in any 24 hours), frozen lists, your draws, and no per-connection limit on the rest. Make a key in one press at [namewheel.org/mcp](https://namewheel.org/mcp#key).
+## Or use the hosted server (nothing to install)
 
-## Add it to your client
+The same server runs at `https://mcp.namewheel.org/mcp` (Streamable HTTP). Without an account: 30 calls a minute and 500 a day per connection. Certified draws need a free NameWheel account, connected through the sign-in flow your client shows.
 
-**Claude (web, desktop, mobile):** Settings, Connectors, Add custom connector, paste `https://mcp.namewheel.org/mcp`. Spins work at once; when a tool needs your account, Claude shows Connect.
+**Claude (web, desktop, mobile):** Settings, Connectors, Add custom connector, paste `https://mcp.namewheel.org/mcp`.
 
 **Claude Code**
 ```
 claude mcp add --transport http namewheel https://mcp.namewheel.org/mcp
 ```
-With a key: add `--header "Authorization: Bearer nw_live_..."`, or run `/mcp` inside a session to connect with the sign-in flow.
 
 **ChatGPT (web):** Settings, Apps (Developer Mode), add `https://mcp.namewheel.org/mcp`.
 
@@ -44,12 +86,12 @@ With a key: add `--header "Authorization: Bearer nw_live_..."`, or run `/mcp` in
 codex mcp add namewheel --url https://mcp.namewheel.org/mcp
 ```
 
-**Cursor:** [Install in Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=NameWheel&config=eyJ1cmwiOiJodHRwczovL21jcC5uYW1ld2hlZWwub3JnL21jcCJ9), or in `~/.cursor/mcp.json`:
+**Cursor:** [Install in Cursor](cursor://anysphere.cursor-deeplink/mcp/install?name=NameWheel&config=eyJ1cmwiOiJodHRwczovL21jcC5uYW1ld2hlZWwub3JnL21jcCJ9), or `~/.cursor/mcp.json`:
 ```json
 { "mcpServers": { "namewheel": { "url": "https://mcp.namewheel.org/mcp" } } }
 ```
 
-**VS Code:** [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=NameWheel&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.namewheel.org%2Fmcp%22%7D), or in `.vscode/mcp.json`:
+**VS Code:** [Install in VS Code](https://vscode.dev/redirect/mcp/install?name=NameWheel&config=%7B%22type%22%3A%22http%22%2C%22url%22%3A%22https%3A%2F%2Fmcp.namewheel.org%2Fmcp%22%7D), or `.vscode/mcp.json`:
 ```json
 { "servers": { "namewheel": { "type": "http", "url": "https://mcp.namewheel.org/mcp" } } }
 ```
@@ -64,9 +106,18 @@ codex mcp add namewheel --url https://mcp.namewheel.org/mcp
 { "mcpServers": { "namewheel": { "httpUrl": "https://mcp.namewheel.org/mcp" } } }
 ```
 
-**Any other client:** use `https://mcp.namewheel.org/mcp` as the server URL (Streamable HTTP). To use your account without the sign-in flow, send your key as `Authorization: Bearer nw_live_...` or `x-api-key: nw_live_...`.
+To use your account without the sign-in flow, send your key as `Authorization: Bearer nw_live_...` or `x-api-key: nw_live_...`.
 
-Full guide with copy buttons and a live wheel: [namewheel.org/mcp](https://namewheel.org/mcp).
+## Run the HTTP server yourself
+
+```
+npm install && npm run build
+NAMEWHEEL_API_URL=https://namewheel.org PUBLIC_URL=https://your-host.example MCP_JWT_SECRET=<random hex> node dist/index.js
+```
+
+Settings: `PORT` (default 8791), `HOST` (default 127.0.0.1), `PUBLIC_URL` (the address clients reach, used for OAuth metadata), `NAMEWHEEL_API_URL`, `MCP_JWT_SECRET` (signs access tokens), `STATE_DIR` (OAuth clients, tokens and guest meters, default /var/lib/namewheel-mcp).
+
+The HTTP server is an OAuth 2.1 authorization server (PKCE, dynamic client registration, client ID metadata documents, RFC 9728 and 8414 metadata). Tools that need no account need no sign-in. When a client calls a tool that needs an account, the server answers 401 and the client shows its Connect flow; the connect page asks for a NameWheel API key and binds the connection to it. Deleting the key in the NameWheel dashboard (Settings, API keys) disconnects every assistant that used it. A key can only run certified draws, freeze lists, read the plan and list its own draws: it cannot change the account, its payments or its data.
 
 ## How certified draws work
 
@@ -76,31 +127,15 @@ Full guide with copy buttons and a live wheel: [namewheel.org/mcp](https://namew
 4. After the spin the secret is published and the record is signed with NameWheel's Ed25519 key ([public key](https://namewheel.org/api/draw-key)).
 5. The proof page lists every certified draw the same account ran on the same list, so re-rolling until a favourite wins is visible.
 
-Spec: [namewheel.org/truespin-spec](https://namewheel.org/truespin-spec). Independent verifier: [namewheel/truespin-verifier](https://github.com/namewheel/truespin-verifier). `verify_draw` runs the same checks.
+Spec: [namewheel.org/truespin-spec](https://namewheel.org/truespin-spec). Independent verifier: [namewheel/truespin-verifier](https://github.com/namewheel/truespin-verifier). `verify_draw` runs the same checks ([src/verify.ts](src/verify.ts)).
 
 ## The in-chat wheel
 
 `spin_wheel`, `make_teams`, `certified_draw` and `verify_draw` link an MCP Apps view (`ui://namewheel/wheel-v1.html`, `text/html;profile=mcp-app`). It is one self-contained HTML file in [`widget/wheel.html`](widget/wheel.html): no outside scripts, fonts or requests. Clients without MCP Apps get the same result as text.
 
-## Sign-in (OAuth)
-
-The server is an OAuth 2.1 authorization server (PKCE, dynamic client registration, client ID metadata documents, RFC 9728 and 8414 metadata). Tools without an account need no sign-in. When a client calls a tool that needs your account, the server answers 401 and the client shows its Connect flow; the page asks for a NameWheel API key and binds the connection to it. Delete the key in your dashboard (Settings, API keys) to disconnect every assistant that used it. A key can only run certified draws, freeze lists, read the plan and list its own draws: it cannot change the account, its payments or its data.
-
 ## Privacy
 
-Plain spins and teams are worked out on this server and the names are never stored. Certified draws and frozen lists are stored by NameWheel and published on their proof pages, as on the website. Calls without an account are metered by the caller's IP address. Request logs (tool, number of entries, client name, address, outcome, never the names) are kept 30 days. Policy: [namewheel.org/privacy](https://namewheel.org/privacy#mcp).
-
-## Run it locally (stdio)
-
-The same server also runs on your own machine, for clients that start local servers. It talks to the public NameWheel API with your own key (free, from [namewheel.org/mcp](https://namewheel.org/mcp#key)).
-
-```
-git clone https://github.com/namewheel/mcp && cd mcp
-npm install && npm run build
-NAMEWHEEL_API_KEY=nw_live_... node dist/stdio.js
-```
-
-Without a key it still starts: spins, teams, wheel links and checking draws work, and certified draws ask for a key. Node.js 20 or later.
+Spins, teams and wheel links never store the names. Certified draws and frozen lists are stored by NameWheel and published on their proof pages, as on the website. The hosted server meters calls without an account by IP address and keeps request logs (tool, number of entries, client name, address, outcome, never the names) for 30 days. Policy: [namewheel.org/privacy](https://namewheel.org/privacy#mcp).
 
 ## License
 
