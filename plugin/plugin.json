@@ -1,0 +1,51 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "namewheel",
+  "version": "1.0.0",
+  "description": "Fair random picks with the NameWheel wheel in the chat: pick names, split random teams, run certified draws with a public proof page, and check any draw.",
+  "author": {
+    "name": "Outline Technologies LLC",
+    "email": "info@namewheel.org",
+    "url": "https://namewheel.org"
+  },
+  "homepage": "https://namewheel.org/mcp",
+  "repository": "https://github.com/namewheel/mcp",
+  "license": "MIT",
+  "keywords": [
+    "random name picker",
+    "spin the wheel",
+    "random team generator",
+    "classroom",
+    "decision",
+    "giveaway",
+    "verifiable random",
+    "teachers"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "NameWheel",
+        "shortDescription": "Fair picks, teams and draws",
+        "longDescription": "Pick a name, a winner or an option at random, fairly, and watch the NameWheel wheel spin to the result right in the chat.\n\nSplit a class or a team into random groups, put the names on a wheel you can open on a projector, or let the wheel settle where to eat tonight.\n\nWhen other people need to trust the result, run a certified draw: the winner is sealed before the spin and published on a permanent public proof page that anyone can recompute. You can also check any NameWheel draw from its code or link.\n\nCertified draws, frozen entry lists and your draw history work once you connect your NameWheel account.",
+        "developerName": "Outline Technologies LLC",
+        "category": "Productivity",
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
+        "websiteURL": "https://namewheel.org/mcp",
+        "supportURL": "https://namewheel.org/contact",
+        "privacyPolicyURL": "https://namewheel.org/privacy#mcp",
+        "termsOfServiceURL": "https://namewheel.org/terms",
+        "defaultPrompt": [
+          "Pick one student to answer the next question: Amira, Ben, Chloe, Diego, Ella, Farah.",
+          "Split these 9 people into 3 random teams: Sam, Priya, Lucas, Mei, Omar, Jo, Rafa, Ines, Kenji.",
+          "Is this NameWheel draw genuine? namewheel.org/v/DG5J6VD7"
+        ],
+        "brandColor": "#7C3AED",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
+      }
+    }
+  }
+}
