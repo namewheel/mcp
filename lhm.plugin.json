@@ -1,0 +1,507 @@
+{
+  "author": "NameWheel (https://namewheel.org)",
+  "cloudEndpoint": "https://mcp.namewheel.org/mcp",
+  "description": "NameWheel MCP server: a fair random name picker for Claude, ChatGPT, Cursor, VS Code and any MCP client. Spin a wheel in the chat, split teams, and run certified draws with a public proof link.",
+  "homepage": "https://namewheel.org/mcp",
+  "icon": "https://mcp.namewheel.org/icon-512.png",
+  "identifier": "namewheel-mcp",
+  "name": "NameWheel",
+  "prompts": [
+    {
+      "name": "pick_student",
+      "title": "Pick a student",
+      "description": "Spin the wheel to pick who answers next, from a class list.",
+      "arguments": [
+        {
+          "name": "names",
+          "description": "The class list: one name per line, or separated by commas.",
+          "required": true
+        },
+        {
+          "name": "how_many",
+          "description": "How many students to pick. Default 1.",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "split_teams",
+      "title": "Split into teams",
+      "description": "Split a list of names into random teams or groups.",
+      "arguments": [
+        {
+          "name": "names",
+          "description": "The names: one per line, or separated by commas.",
+          "required": true
+        },
+        {
+          "name": "teams",
+          "description": "How many teams. Leave empty to give a team size instead.",
+          "required": false
+        },
+        {
+          "name": "team_size",
+          "description": "How many people per team, instead of a number of teams.",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "certified_draw_with_proof",
+      "title": "Certified draw with a proof page",
+      "description": "Run a TrueSpin certified draw that anyone can check later, on a public proof page.",
+      "arguments": [
+        {
+          "name": "title",
+          "description": "What the draw is for, as it should appear on the public page.",
+          "required": true
+        },
+        {
+          "name": "entries",
+          "description": "The entries: one per line, or separated by commas.",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "make_a_decision",
+      "title": "Let the wheel decide",
+      "description": "Put a few options on the wheel and let it choose.",
+      "arguments": [
+        {
+          "name": "options",
+          "description": "The options: one per line, or separated by commas.",
+          "required": true
+        },
+        {
+          "name": "question",
+          "description": "What is being decided, like 'Where do we eat tonight?'",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "verify_a_draw",
+      "title": "Check a draw",
+      "description": "Check whether a NameWheel certified draw is genuine, from its code or link.",
+      "arguments": [
+        {
+          "name": "code",
+          "description": "The draw code, like DG5J6VD7, or its namewheel.org/v/ link.",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "resources": [
+    {
+      "name": "wheel",
+      "title": "NameWheel wheel",
+      "uri": "ui://namewheel/wheel-v1.html",
+      "description": "The interactive view for NameWheel results: the wheel spinning to the winner, teams, and draw checks.",
+      "mimeType": "text/html;profile=mcp-app",
+      "_meta": {
+        "ui": {
+          "csp": {
+            "connectDomains": [],
+            "resourceDomains": []
+          },
+          "permissions": {
+            "clipboardWrite": {}
+          },
+          "prefersBorder": false
+        },
+        "openai/widgetDescription": "A NameWheel wheel that spins to the winner, random teams as cards, or the checks behind a certified draw.",
+        "openai/widgetPrefersBorder": false,
+        "openai/widgetCSP": {
+          "connect_domains": [],
+          "resource_domains": []
+        }
+      }
+    },
+    {
+      "name": "truespin",
+      "title": "How certified draws work",
+      "uri": "namewheel://truespin",
+      "description": "TrueSpin, step by step: the sealed secret, the added randomness, the winner math, the signature, attempt disclosure, frozen lists and how anyone can check a draw.",
+      "mimeType": "text/markdown"
+    },
+    {
+      "name": "limits",
+      "title": "NameWheel limits",
+      "uri": "namewheel://limits",
+      "description": "What works without an account and with a free NameWheel account through this server, and the limits of each.",
+      "mimeType": "text/markdown"
+    }
+  ],
+  "tags": [
+    "mcp",
+    "model-context-protocol",
+    "mcp-apps",
+    "random-picker",
+    "name-picker",
+    "spin-the-wheel",
+    "random-team-generator",
+    "verifiable-random",
+    "claude",
+    "chatgpt",
+    "namewheel"
+  ],
+  "tools": [
+    {
+      "name": "spin_wheel",
+      "title": "Spin the wheel",
+      "description": "Pick one or more winners at random from a list of names or options, and show the wheel spinning to the result in the chat. Use it whenever the person wants something chosen at random: a student to answer, who goes first, where to eat, a raffle winner among friends. Works without an account. The pick is fair (a cryptographic random number generator), but it is not a certified record; when other people need to be able to check the result later, use certified_draw instead.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "maxItems": 500,
+            "description": "The names or options, one per item, exactly as the person gave them. Repeating a name gives it another slot (another chance), as on the NameWheel website."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "A short title for the wheel, such as 'Period 3 cold call' or 'Who presents first'."
+          },
+          "winners": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "How many winners to pick. Default 1."
+          },
+          "allow_repeat_winners": {
+            "type": "boolean",
+            "description": "With more than one winner, may the same entry win twice? Default false: each winner leaves the wheel."
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Spin the wheel",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "_meta": {
+        "ui": {
+          "resourceUri": "ui://namewheel/wheel-v1.html"
+        },
+        "openai/outputTemplate": "ui://namewheel/wheel-v1.html",
+        "openai/toolInvocation/invoking": "Spinning the wheel",
+        "openai/toolInvocation/invoked": "The wheel stopped"
+      }
+    },
+    {
+      "name": "make_teams",
+      "title": "Split into random teams",
+      "description": "Split a list of names into random teams or groups of even size, and show them as cards in the chat. Use it for class groups, project teams, game sides, rotations. Give either how many teams or how many people per team. Works without an account.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "maxItems": 500,
+            "description": "The names or options, one per item, exactly as the person gave them. Repeating a name gives it another slot (another chance), as on the NameWheel website."
+          },
+          "teams": {
+            "type": "integer",
+            "minimum": 2,
+            "maximum": 50,
+            "description": "How many teams. Default 2 when team_size is not given."
+          },
+          "team_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "description": "How many people per team, instead of a number of teams."
+          },
+          "team_names": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "maxLength": 40
+            },
+            "maxItems": 50,
+            "description": "Names for the teams, in order. Default Team 1, Team 2..."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "A short title for the wheel, such as 'Period 3 cold call' or 'Who presents first'."
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Split into random teams",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "_meta": {
+        "ui": {
+          "resourceUri": "ui://namewheel/wheel-v1.html"
+        },
+        "openai/outputTemplate": "ui://namewheel/wheel-v1.html",
+        "openai/toolInvocation/invoking": "Splitting into teams",
+        "openai/toolInvocation/invoked": "Teams are ready"
+      }
+    },
+    {
+      "name": "open_wheel_link",
+      "title": "Get a wheel link",
+      "description": "Make a namewheel.org link that opens the full NameWheel wheel with these names already loaded, for spinning on a projector, a stream or a shared screen with sound, modes and themes. Works without an account. Commas inside a name become spaces in the link.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "maxItems": 500,
+            "description": "The names or options, one per item, exactly as the person gave them. Repeating a name gives it another slot (another chance), as on the NameWheel website."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 80,
+            "description": "A short title for the wheel, such as 'Period 3 cold call' or 'Who presents first'."
+          }
+        },
+        "required": [
+          "entries"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Get a wheel link",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "certified_draw",
+      "title": "Run a certified draw",
+      "description": "Run a TrueSpin certified draw on NameWheel: the winner is sealed by NameWheel's server before it is revealed, randomness from this connection is added, and the result is published on a permanent public proof page (namewheel.org/v/CODE) that anyone can check, with a button that recomputes the draw. Use it when the result must be provable to other people: a class prize, a team decision, a draw announced to a group. IMPORTANT: the title, every entry and the winner become public on the proof page, so only use names the person is happy to publish, and tell them so. Needs a connected NameWheel account (free). To draw against a list locked earlier with freeze_list, pass frozen_code instead of entries.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "The draw's public title, such as 'Year 9 reading prize' or 'Who presents first'."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "maxItems": 500,
+            "description": "The names or options, one per item, exactly as the person gave them. Repeating a name gives it another slot (another chance), as on the NameWheel website."
+          },
+          "frozen_code": {
+            "type": "string",
+            "maxLength": 40,
+            "description": "Code or link of a list frozen earlier with freeze_list (namewheel.org/f/CODE). The draw uses exactly that list."
+          },
+          "entropy": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Optional words or a number from the person, mixed into the draw's randomness."
+          }
+        },
+        "required": [
+          "title"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Run a certified draw",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "_meta": {
+        "ui": {
+          "resourceUri": "ui://namewheel/wheel-v1.html"
+        },
+        "openai/outputTemplate": "ui://namewheel/wheel-v1.html",
+        "openai/toolInvocation/invoking": "Running a certified draw",
+        "openai/toolInvocation/invoked": "The certified draw is done"
+      }
+    },
+    {
+      "name": "freeze_list",
+      "title": "Freeze an entry list",
+      "description": "Lock a list of entries in public before a draw, at namewheel.org/f/CODE, with a fingerprint and the exact time. Nobody can add or remove a name after that, and when certified_draw later uses this list (frozen_code), the frozen page links to the result. Use it when entries close before the draw happens. The title and every entry are public. Needs a connected NameWheel account (free).",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 80,
+            "description": "The list's public title."
+          },
+          "entries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 2,
+            "maxItems": 500,
+            "description": "The names or options, one per item, exactly as the person gave them. Repeating a name gives it another slot (another chance), as on the NameWheel website."
+          }
+        },
+        "required": [
+          "title",
+          "entries"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Freeze an entry list",
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "verify_draw",
+      "title": "Check a certified draw",
+      "description": "Check whether a NameWheel certified draw is genuine, from its code or its namewheel.org/v/ link: recomputes the winner from the published secret, the added randomness and the entries, checks the commitment made before the spin, and checks NameWheel's Ed25519 signature on the record. Also says how many draws the host ran on this exact list. Use it when someone asks whether a draw or a giveaway result was real. Works without an account.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 4,
+            "maxLength": 200,
+            "description": "The draw code (8 letters and digits) or its link, such as namewheel.org/v/DG5J6VD7."
+          }
+        },
+        "required": [
+          "code"
+        ],
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Check a certified draw",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      },
+      "_meta": {
+        "ui": {
+          "resourceUri": "ui://namewheel/wheel-v1.html"
+        },
+        "openai/outputTemplate": "ui://namewheel/wheel-v1.html",
+        "openai/toolInvocation/invoking": "Checking the draw",
+        "openai/toolInvocation/invoked": "Draw checked"
+      }
+    },
+    {
+      "name": "my_draws",
+      "title": "List my certified draws",
+      "description": "List this account's recent NameWheel certified draws (or frozen lists) with their winners and proof links, newest first. Needs a connected NameWheel account.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "description": "How many to list. Default 10."
+          },
+          "frozen_lists": {
+            "type": "boolean",
+            "description": "List frozen entry lists instead of draws."
+          }
+        },
+        "additionalProperties": false,
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "List my certified draws",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    },
+    {
+      "name": "check_plan",
+      "title": "Check what this connection can do",
+      "description": "Say what this NameWheel connection can do: without an account (spins, teams, wheel links, checking draws) or with a connected account (certified draws, frozen lists, the account's draws), and how many certified draws are left today. Use it when the person asks about limits, their account, or why a request was refused.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {},
+        "$schema": "http://json-schema.org/draft-07/schema#"
+      },
+      "annotations": {
+        "title": "Check what this connection can do",
+        "readOnlyHint": true,
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false
+      },
+      "execution": {
+        "taskSupport": "forbidden"
+      }
+    }
+  ],
+  "version": "1.0.0"
+}
