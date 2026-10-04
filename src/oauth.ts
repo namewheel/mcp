@@ -49,6 +49,8 @@ export function authorizationServerMetadata() {
     grant_types_supported: ["authorization_code", "refresh_token"],
     token_endpoint_auth_methods_supported: ["none"],
     code_challenge_methods_supported: ["S256"],
+    // RFC 9207: every authorization response carries iss, so a client can tell which server answered.
+    authorization_response_iss_parameter_supported: true,
     client_id_metadata_document_supported: true,
     service_documentation: `${SITE}/mcp`,
   };
@@ -157,7 +159,7 @@ export function mountOAuth(app: Express): void {
     const client = q.client_id ? await resolveClient(q.client_id) : null;
     if (!client) return res.status(400).send(page("Unknown client", `<h1>Unknown client</h1><p>This assistant is not registered with NameWheel. Ask it to connect again.</p>`));
     if (!q.redirect_uri || !redirectAllowed(client.redirect_uris, q.redirect_uri)) return res.status(400).send(page("Redirect not allowed", `<h1>Redirect not allowed</h1><p>The assistant asked to return to an address it did not register.</p>`));
-    const back = (err: string, desc: string) => { const u = new URL(q.redirect_uri!); u.searchParams.set("error", err); u.searchParams.set("error_description", desc); if (q.state) u.searchParams.set("state", q.state); res.redirect(u.toString()); };
+    const back = (err: string, desc: string) => { const u = new URL(q.redirect_uri!); u.searchParams.set("error", err); u.searchParams.set("error_description", desc); if (q.state) u.searchParams.set("state", q.state); u.searchParams.set("iss", ISSUER); res.redirect(u.toString()); };
     if (q.response_type !== "code") return back("unsupported_response_type", "Only response_type=code is supported");
     if (!q.code_challenge || q.code_challenge_method !== "S256") return back("invalid_request", "PKCE with S256 is required");
     if (q.resource && q.resource !== RESOURCE && q.resource !== RESOURCE + "/") return back("invalid_target", `resource must be ${RESOURCE}`);
@@ -183,6 +185,7 @@ export function mountOAuth(app: Express): void {
     const u = new URL(p.redirect_uri);
     u.searchParams.set("code", code);
     if (p.state) u.searchParams.set("state", p.state);
+    u.searchParams.set("iss", ISSUER);
     res.redirect(u.toString());
   });
 
