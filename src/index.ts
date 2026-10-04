@@ -105,6 +105,13 @@ async function handleMcp(req: Request, res: Response): Promise<void> {
     const acc = String(req.headers.accept || "");
     if (!/text\/event-stream/.test(acc) || !/application\/json|\*\/\*/.test(acc)) req.headers.accept = "application/json, text/event-stream";
   }
+  // A POST with no JSON body and no credentials is a client asking how to sign in (OpenAI's plugin
+  // builder does this before it shows Connect): answer with the OAuth challenge, not a media type error.
+  if (req.method === "POST" && !req.is("application/json") && !req.headers.authorization && !req.headers["x-api-key"]) {
+    const why = "Send JSON-RPC as application/json. Sign in with OAuth for certified draws";
+    res.status(401).set("WWW-Authenticate", wwwAuthenticate(why)).json({ error: "invalid_request", error_description: why });
+    return;
+  }
   if (overLimit("mcp", clientIp(req), platformOf(clientIp(req)) ? 6000 : 180, 60_000)) { res.status(429).set("Retry-After", "60").json({ jsonrpc: "2.0", error: { code: -32000, message: "Too many requests from this address. Wait a minute." }, id: null }); return; }
   const { caller, badToken } = await resolveCaller(req);
   let protectedTool = req.method === "POST" ? callsTool(req.body, PROTECTED_TOOLS) : null;

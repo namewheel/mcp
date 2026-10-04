@@ -2,7 +2,7 @@
 // at mcp.namewheel.org) and the local one (stdio.ts, run on your own machine).
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { CONFIG } from "./config.js";
-import { registerTools, type Caller } from "./tools.js";
+import { registerTools, PROTECTED_TOOLS, type Caller } from "./tools.js";
 import { registerExtras } from "./extras.js";
 import { registerWidget } from "./widget.js";
 import pkg from "../package.json" with { type: "json" };
@@ -20,6 +20,23 @@ export function createServer(caller: Caller): McpServer {
     icons: [{ src: "https://mcp.namewheel.org/icon-512.png", mimeType: "image/png", sizes: ["512x512"] }, { src: "https://mcp.namewheel.org/icon-128.png", mimeType: "image/png", sizes: ["128x128"] }],
   }, { instructions: CONFIG.local ? INSTRUCTIONS_LOCAL : INSTRUCTIONS });
   registerTools(server, caller);
+  // ChatGPT reads a securitySchemes list on each tool to know which ones work without sign-in
+  // and which ones open its Connect flow. The SDK has no field for it, so the list is added on the way out.
+  if (!CONFIG.local) {
+    type ListTools = (req: unknown, extra: unknown) => Promise<{ tools?: Record<string, unknown>[] }>;
+    const handlers = (server.server as unknown as { _requestHandlers: Map<string, ListTools> })._requestHandlers;
+    const list = handlers.get("tools/list");
+    if (list) handlers.set("tools/list", async (req, extra) => {
+      const out = await list(req, extra);
+      for (const t of out.tools || []) {
+        const oauth = { type: "oauth2", scopes: ["draws"] };
+        const schemes = PROTECTED_TOOLS.has(String(t.name)) ? [oauth] : [{ type: "noauth" }, oauth];
+        t.securitySchemes = schemes;
+        t._meta = { ...((t._meta as Record<string, unknown>) || {}), securitySchemes: schemes };
+      }
+      return out;
+    });
+  }
   registerWidget(server);
   registerExtras(server);
   return server;

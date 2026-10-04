@@ -1,6 +1,6 @@
 {
   "name": "@namewheel/mcp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "mcpName": "org.namewheel/mcp",
   "description": "NameWheel MCP server: a fair random name picker for Claude, ChatGPT, Cursor, VS Code and any MCP client. Spin a wheel in the chat, split teams, and run certified draws with a public proof link.",
   "keywords": [
