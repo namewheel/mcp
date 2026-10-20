@@ -262,10 +262,21 @@ export async function keyFromAccessToken(token: string): Promise<{ apiKey: strin
 
 function connectPage(rid: string, client: OAuthClient, err: string | null): string {
   const name = esc((client.client_name || "your assistant").replace(/[<>&"]/g, ""));
+  // The published ChatGPT plugin asks for the key when it is added and uses it
+  // for every call, spins included; other apps can spin as guests.
+  const chatgpt = client.client_id.startsWith("https://chatgpt.com/");
+  const what = chatgpt
+    ? `<p>Paste your NameWheel key and ${name} can use NameWheel for you:</p>
+<ul class="what"><li>Spinning the wheel and making random teams right in the chat</li><li>Certified draws with a public proof page anyone can check</li><li>Freezing entry lists and listing your draws</li></ul>`
+    : `<p>Paste your NameWheel key and ${name} can do what needs an account:</p>
+<ul class="what"><li>Certified draws with a public proof page anyone can check</li><li>Freezing an entry list before a draw</li><li>Listing your draws and their proof links</li></ul>`;
+  const keyPage = chatgpt ? `${SITE}/chatgpt#key` : `${SITE}/mcp#key`;
+  const fine = chatgpt
+    ? `${name} uses this key for every NameWheel request, so you only paste it once, when you add the plugin.`
+    : `Spins, teams and checking draws work without connecting.`;
   return page("Connect to NameWheel", `
 <h1>Connect ${name} to NameWheel</h1>
-<p>Paste your NameWheel key and ${name} can do what needs an account:</p>
-<ul class="what"><li>Certified draws with a public proof page anyone can check</li><li>Freezing an entry list before a draw</li><li>Listing your draws and their proof links</li></ul>
+${what}
 ${err ? `<p class="err">${esc(err)}</p>` : ""}
 <form method="post" action="/oauth/consent">
 <input type="hidden" name="rid" value="${rid}">
@@ -274,6 +285,6 @@ ${err ? `<p class="err">${esc(err)}</p>` : ""}
 <button type="submit">Connect</button>
 </form>
 <div class="or">No key yet</div>
-<a class="get" href="${SITE}/mcp#key" target="_blank" rel="noopener"><i>&#10022;</i><div><b>Get my key in one press</b><span>Free account, no card. It is copied for you, then come back and paste it here.</span></div><em>&rarr;</em></a>
-<p class="fine">Spins, teams and checking draws work without connecting. Only this key is kept, on NameWheel's servers, to act for you when ${name} asks. Delete the key in your dashboard (Settings, API keys) to disconnect. <a href="${SITE}/privacy#mcp" target="_blank" rel="noopener">Privacy</a></p>`);
+<a class="get" href="${keyPage}" target="_blank" rel="noopener"><i>&#10022;</i><div><b>Get my key in one press</b><span>Free account, no card. It is copied for you, then come back and paste it here.</span></div><em>&rarr;</em></a>
+<p class="fine">${fine} Only this key is kept, on NameWheel's servers, to act for you when ${name} asks. Delete the key in your dashboard (Settings, API keys) to disconnect. <a href="${SITE}/privacy#mcp" target="_blank" rel="noopener">Privacy</a></p>`);
 }
